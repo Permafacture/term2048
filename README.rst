@@ -1,3 +1,9 @@
+
+This is a fork made to play with AI. 
+run ./term2048/ui.py to see AI
+
+  To Ryan, with love.
+
 ========
 term2048
 ========

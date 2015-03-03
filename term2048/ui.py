@@ -2,9 +2,25 @@
 from __future__ import print_function
 
 import sys
-from term2048.game import Game
+from game import Game
 
-import argparse
+# set this to true when unit testing
+debug = False
+
+__has_argparse = True
+try:
+    import argparse
+except ImportError:
+    __has_argparse = False
+
+
+def __print_argparse_warning():
+    """print a warning for Python 2.6 users who don't have argparse"""
+    print("""WARNING:
+        You seems to be running Python 2.6 without 'argparse'. Please install
+        the module so I can handle your options:
+            [sudo] pip install argparse
+        I'll continue without processing any option.""")
 
 
 def print_version_and_exit():
@@ -27,31 +43,27 @@ def parse_cli_args():
                         default=None, help='colors mode (dark or light)')
     parser.add_argument('--az', dest='azmode', action='store_true',
                         help='Use the letters a-z instead of numbers')
-    parser.add_argument('--resume', dest='resume', action='store_true',
-                        help='restart the game from where you left')
-    parser.add_argument('-v', '--version', action='store_true')
-    parser.add_argument('-r', '--rules', action='store_true')
+    parser.add_argument('--version', action='store_true')
+    parser.add_argument('--rules', action='store_true')
     return vars(parser.parse_args())
 
 
-def start_game(debug=False):
-    """
-    Start a new game. If ``debug`` is set to ``True``, the game object is
-    returned and the game loop isn't fired.
-    """
-    args = parse_cli_args()
+def start_game():
+    """start a new game"""
+    if not __has_argparse:
+        __print_argparse_warning()
+        args = {}
+    else:
+        args = parse_cli_args()
 
-    if args['version']:
-        print_version_and_exit()
+        if args['version']:
+            print_version_and_exit()
 
-    if args['rules']:
-        print_rules_and_exit()
+        if args['rules']:
+            print_rules_and_exit()
 
-    game = Game(**args)
-    if args['resume']:
-        game.restore()
+    if not debug:
+        Game(**args).loop()
 
-    if debug:
-        return game
-
-    return game.loop()
+if __name__ == "__main__":
+  start_game()

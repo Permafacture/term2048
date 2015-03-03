@@ -13,10 +13,11 @@ class Board(object):
     A 2048 board
     """
 
-    UP, DOWN, LEFT, RIGHT, PAUSE = 1, 2, 3, 4, 5
+    UP, DOWN, LEFT, RIGHT = 1, 2, 3, 4
 
     GOAL = 2048
     SIZE = 4
+    moved = False #keep track of wether the last move had any affect 
 
     def __init__(self, goal=GOAL, size=SIZE, **kws):
         self.__size = size
@@ -157,7 +158,7 @@ class Board(object):
         else:
             return 0
 
-        moved = False
+        self.moved = False
         score = 0
 
         for i in self.__size_range:
@@ -174,11 +175,11 @@ class Board(object):
             chg(i, new)
             # did it change?
             if origin != new:
-                moved = True
+                self.moved = True
             score += pts
 
         # don't add a new tile if nothing changed
-        if moved and add_tile:
+        if self.moved and add_tile:
             self.addTile()
 
         return score

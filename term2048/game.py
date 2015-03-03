@@ -1,17 +1,16 @@
 # -*- coding: UTF-8 -*-
 from __future__ import print_function
 
-import atexit
 import os
 import os.path
 import math
-import sys
 
 from colorama import init, Fore, Style
 init(autoreset=True)
 
-from term2048 import keypress
-from term2048.board import Board
+import keypress
+from board import Board
+from decisions import projection, autoplay, autokey
 
 class Game(object):
     """
@@ -23,10 +22,9 @@ class Game(object):
         keypress.DOWN:    Board.DOWN,
         keypress.LEFT:    Board.LEFT,
         keypress.RIGHT:   Board.RIGHT,
-        keypress.SPACE:   Board.PAUSE,
     }
 
-    __is_windows = os.name == 'nt'
+    __clear = 'cls' if os.name == 'nt' else 'clear'
 
     COLORS = {
         2:    Fore.GREEN,
@@ -58,17 +56,15 @@ class Game(object):
     }
 
     SCORES_FILE = '%s/.term2048.scores' % os.path.expanduser('~')
-    STORE_FILE = '%s/.term2048.store' % os.path.expanduser('~')
 
     def __init__(self, scores_file=SCORES_FILE, colors=COLORS,
-                 store_file=STORE_FILE, clear_screen=True,
+                 clear_screen=True,
                  mode=None, azmode=False, **kws):
         """
         Create a new game.
             scores_file: file to use for the best score (default
                          is ~/.term2048.scores)
             colors: dictionnary with colors to use for each tile
-            store_file: file that stores game session's snapshot
             mode: color mode. This adjust a few colors and can be 'dark' or
                   'light'. See the adjustColors functions for more info.
             other options are passed to the underlying Board object.
@@ -76,7 +72,6 @@ class Game(object):
         self.board = Board(**kws)
         self.score = 0
         self.scores_file = scores_file
-        self.store_file = store_file
         self.clear_screen = clear_screen
 
         self.__colors = colors
@@ -100,13 +95,15 @@ class Game(object):
         """
         load local best score from the default file
         """
-        try:
-            with open(self.scores_file, 'r') as f:
-                self.best_score = int(f.readline(), 10)
-        except:
+        if self.scores_file is None or not os.path.exists(self.scores_file):
             self.best_score = 0
-            return False
-        return True
+            return
+        try:
+            f = open(self.scores_file, 'r')
+            self.best_score = int(f.readline(), 10)
+            f.close()
+        except:
+            pass  # fail silently
 
     def saveBestScore(self):
         """
@@ -115,11 +112,11 @@ class Game(object):
         if self.score > self.best_score:
             self.best_score = self.score
         try:
-            with open(self.scores_file, 'w') as f:
-                f.write(str(self.best_score))
+            f = open(self.scores_file, 'w')
+            f.write(str(self.best_score))
+            f.close()
         except:
-            return False
-        return True
+            pass  # fail silently
 
     def incScore(self, pts):
         """
@@ -129,6 +126,12 @@ class Game(object):
         if self.score > self.best_score:
             self.best_score = self.score
 
+    def end(self):
+        """
+        return True if the game is finished
+        """
+        return not (self.board.won() or self.board.canMove())
+
     def readMove(self):
         """
         read and return a move to pass to a board
@@ -136,102 +139,22 @@ class Game(object):
         k = keypress.getKey()
         return Game.__dirs.get(k)
 
-    def store(self):
-        """
-        save the current game session's score and data for further use
-        """
-        size = self.board.SIZE
-        cells = []
-
-        for i in range(size):
-            for j in range(size):
-                cells.append(str(self.board.getCell(j, i)))
-
-        score_str = "%s\n%d" % (' '.join(cells), self.score)
-
-        try:
-            with open(self.store_file, 'w') as f:
-                f.write(score_str)
-        except:
-            return False
-        return True
-
-    def restore(self):
-        """
-        restore the saved game score and data
-        """
-
-        size = self.board.SIZE
-
-        try:
-            with open(self.store_file, 'r') as f:
-                lines = f.readlines()
-                score_str = lines[0]
-                self.score = int(lines[1])
-        except:
-            return False
-
-        score_str_list = score_str.split(' ')
-        count = 0
-
-        for i in range(size):
-            for j in range(size):
-                value = score_str_list[count]
-                self.board.setCell(j, i, int(value))
-                count += 1
-
-        return True
-
-    def clearScreen(self):
-        """Clear the console"""
-        if self.clear_screen:
-            os.system('cls' if self.__is_windows else 'clear')
-        else:
-            print('\n')
-
-    def hideCursor(self):
-        """
-        Hide the cursor. Don't forget to call ``showCursor`` to restore
-        the normal shell behavior. This is a no-op if ``clear_screen`` is
-        falsy.
-        """
-        if not self.clear_screen:
-            return
-        if not self.__is_windows:
-            sys.stdout.write('\033[?25l')
-
-    def showCursor(self):
-        """Show the cursor."""
-        if not self.__is_windows:
-            sys.stdout.write('\033[?25h')
-
     def loop(self):
         """
         main game loop. returns the final score.
         """
-        pause_key = self.board.PAUSE
-        margins = {'left': 4, 'top': 4, 'bottom': 4}
-
-        atexit.register(self.showCursor)
-
         try:
-            self.hideCursor()
             while True:
-                self.clearScreen()
-                print(self.__str__(margins=margins))
+                if self.clear_screen:
+                    os.system(Game.__clear)
+                else:
+                    print("\n")
+                print(self.__str__(margins={'left': 4, 'top': 4, 'bottom': 4}))
                 if self.board.won() or not self.board.canMove():
                     break
                 m = self.readMove()
-
-                if (m == pause_key):
-                    self.saveBestScore()
-                    if self.store():
-                        print("Game successfully saved. "
-                              "Resume it with `term2048 --resume`.")
-                        return self.score
-                    print("An error ocurred while saving your game.")
-                    return
-
+		if autoplay:
+		    m = autokey.pop()
                 self.incScore(self.board.move(m))
 
         except KeyboardInterrupt:
@@ -248,14 +171,16 @@ class Game(object):
         """
         c = self.board.getCell(x, y)
 
-        if c == 0:
-            return '.' if self.__azmode else '  .'
+        az = {}
+        for i in range(1, int(math.log(self.board.goal(), 2))):
+            az[2 ** i] = chr(i + 96)
+
+        if c == 0 and self.__azmode:
+            return '.'
+        elif c == 0:
+            return '  .'
 
         elif self.__azmode:
-            az = {}
-            for i in range(1, int(math.log(self.board.goal(), 2))):
-                az[2 ** i] = chr(i + 96)
-
             if c not in az:
                 return '?'
             s = az[c]
@@ -275,13 +200,22 @@ class Game(object):
         b = self.board
         rg = range(b.size())
         left = ' '*margins.get('left', 0)
-        s = '\n'.join(
-            [left + ' '.join([self.getCellStr(x, y) for x in rg]) for y in rg])
+	s = str()
+	for i,line in enumerate([left + ' '.join([self.getCellStr(x, y) for x in rg]) for y in rg]):
+	    s = s + line + '\t#%s\n' % i
+	#add extra output markers
+        for x in range(6):
+	  s += '#%s\n' % (i+1+x)
         return s
 
     def __str__(self, margins={}):
         b = self.boardToString(margins=margins)
         top = '\n'*margins.get('top', 0)
         bottom = '\n'*margins.get('bottom', 0)
-        scores = ' \tScore: %5d  Best: %5d\n' % (self.score, self.best_score)
-        return top + b.replace('\n', scores, 1) + bottom
+        scores = ' Score: %5d  Best: %5d' % (self.score, self.best_score)
+	nextmove, data = projection(self.board)
+        output_vars = [scores, ' ', 'Next move: %s' % nextmove, ' ', ' ','Data:']
+        output_vars.extend(data)
+        for i, text in enumerate(output_vars):
+          b = b.replace('#%s' % i, text)
+        return top + b + bottom
